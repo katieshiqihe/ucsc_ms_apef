@@ -1,2 +1,2 @@
-# ucsc_ms_apef
+# UCSC MS APEF Examples
 Scripts to compute moving averages on S&P.
