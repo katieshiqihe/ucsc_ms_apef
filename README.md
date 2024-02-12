@@ -1,2 +1,2 @@
 # UCSC MS APEF Examples
-Scripts to compute moving averages on S&P.
+Simple trend following portfolio trading S&P and Bitcoin.
