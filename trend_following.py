@@ -7,7 +7,7 @@ Trend following example.
 import yfinance as yf
 import numpy as np
 import matplotlib.pyplot as plt
-plt.style.use('seaborn-darkgrid')
+plt.style.use('seaborn-v0_8-darkgrid')
 
 ###############################################################################
 # Moving average functions
@@ -76,14 +76,8 @@ def ema(x, halflife):
 ###############################################################################
 
 # Download S&P data from Yahoo
-sp_data = yf.download('^GSPC', start='2019-02-01', end='2024-02-09')
-sp_settle = sp_data['Close'].values
-
-# Save data in case no internet
-sp_data.to_csv('sp.csv')
-import pandas as pd
-sp_data = pd.read_csv('sp.csv', index_col=0)
-sp_data.index = pd.to_datetime(sp_data.index)
+sp_data = yf.download('^GSPC', start='2019-02-01', end='2025-01-24')
+sp_data.columns = sp_data.columns.droplevel(level=1)
 sp_settle = sp_data['Close'].values
 
 # Plot
@@ -138,6 +132,24 @@ plt.title('S&P Settle and Exponential Moving Averages')
 plt.savefig('EMA.png')
 
 ###############################################################################
+# Exponential weights
+###############################################################################
+hl = np.arange(10, 110, 10)
+l = np.arange(101)
+
+# Plot
+plt.figure(figsize=(10,5))
+for h in hl:
+    alpha = 1-(1/2)**(1/h)
+    w = alpha*(1-alpha)**(l)
+    plt.plot(l, w, label='Half-life: %d, sum of weights:%.2f'%(h, np.sum(w)))
+plt.xlabel('Lag')
+plt.ylabel('Weight')
+plt.legend()
+plt.title('Exponential Weights with Different Half-lives')
+plt.savefig('alpha_weights.png')
+
+###############################################################################
 # Signal and taction
 ###############################################################################
 
@@ -182,7 +194,7 @@ def calc_traction(signal, mktret):
     
     return traction
     
-sp_signal = trend_signal(sp_settle, 20, 100)
+sp_signal = trend_signal(sp_settle, 10, 20)
 sp_ret = market_returns(sp_settle)
 sp_traction = calc_traction(sp_signal, sp_ret)
 start = 100 
@@ -228,6 +240,27 @@ def calc_gearing(pnl, vol_target, window):
     
     return gearing
 
+def sharpe_ratio(pnl, risk_free=0):
+    """
+    Calculate sharpe ratio
+
+    Parameters
+    ----------
+    pnl : Numpy array
+        PnL time series.
+    risk_free : float, optional
+        Daily risk free rate. The default is 0.
+
+    Returns
+    -------
+    s : float
+        Sharpe ratio of time series.
+
+    """
+    
+    s = np.nanmean(pnl-risk_free)/np.nanstd(pnl)*(256**0.5)
+    return s
+
 vol_target = np.nanstd(sp_ret)
 sp_pos = calc_pos(sp_signal, sp_ret)
 sp_pnl = calc_traction(sp_pos, sp_ret)
@@ -235,32 +268,47 @@ gearing = calc_gearing(sp_pnl, vol_target, 50)
 sp_pnl = sp_pnl*gearing
 sp_pos = sp_pos*gearing
 
+window = 50
+traction_vol = pd.Series(sp_traction).rolling(window).std().values
+pnl_vol = pd.Series(sp_pnl).rolling(window).std().values
+
 # Plot
 plt.figure(figsize=(10,4))
-plt.plot(sp_data.index[start:], np.nancumsum(sp_pnl[start:]), label='Trend')
-plt.plot(sp_data.index[start:], np.nancumsum(sp_ret[start:]), label='Buy & hold')
+plt.plot(sp_data.index[start:], np.nancumsum(sp_pnl[start:]),
+         label='Trend, sharpe=%.2f'%sharpe_ratio(sp_pnl[start:]))
+plt.plot(sp_data.index[start:], np.nancumsum(sp_ret[start:]),
+         label='Buy & hold, sharpe=%.2f'%sharpe_ratio(sp_ret[start:]))
 plt.xlabel('Date')
 plt.ylabel('Cumulative RoR')
 plt.title('Trend Following S&P PnL, %.2f %% Daily Vol'%(vol_target*100))
 plt.legend()
 plt.savefig('sp_pnl.png')
 
+fig, ax = plt.subplots(2, 1, sharex=True, figsize=(10, 5))
+ax[0].plot(sp_data.index[start:], np.nancumsum(sp_traction[start:]),
+         label='Traction, sharpe=%.2f'%sharpe_ratio(sp_traction[start:]))
+ax[0].plot(sp_data.index[start:], np.nancumsum(sp_pnl[start:]),
+         label='Geared PnL, sharpe=%.2f'%sharpe_ratio(sp_pnl[start:]))
+ax[0].legend()
+ax[0].set_ylabel('Cumulative RoR')
+ax[1].plot(sp_data.index[start:], traction_vol[start:], label='Traction')
+ax[1].plot(sp_data.index[start:], pnl_vol[start:], label='Geared PnL')
+ax[1].set_xlabel('Date')
+ax[1].set_ylabel('Daily vol')
+ax[1].legend()
+fig.suptitle('Effect of Gearing')
+fig.savefig('gearing.png')
+
 ###############################################################################
 # Bitcoin
 ###############################################################################
 
 # Download bitcoin data from Yahoo
-bc_data = yf.download('BTC-USD', start='2019-02-01', end='2024-02-09')
+bc_data = yf.download('BTC-USD', start='2019-02-01', end='2025-01-24')
+bc_data.columns = bc_data.columns.droplevel(level=1)
 bc_settle = bc_data['Close'].values
 
-# Save data in case no internet
-bc_data.to_csv('bc.csv')
-import pandas as pd
-bc_data = pd.read_csv('bc.csv', index_col=0)
-bc_data.index = pd.to_datetime(bc_data.index)
-bc_settle = bc_data['Close'].values
-
-bc_signal = trend_signal(bc_settle, 10, 20)
+bc_signal = trend_signal(bc_settle, 1, 10)
 bc_ret = market_returns(bc_settle)
 bc_pos = calc_pos(bc_signal, bc_ret)
 bc_pnl = calc_traction(bc_signal, bc_ret)
@@ -270,8 +318,10 @@ bc_pnl = bc_pnl*gearing
 
 # Plot
 plt.figure(figsize=(10,4))
-plt.plot(bc_data.index[start:], np.nancumsum(bc_pnl[start:]), label='Trend')
-plt.plot(bc_data.index[start:], np.nancumsum(bc_ret[start:]), label='Buy & hold')
+plt.plot(bc_data.index[start:], np.nancumsum(bc_pnl[start:]),
+         label='Trend, sharpe=%.2f'%sharpe_ratio(bc_pnl[start:]))
+plt.plot(bc_data.index[start:], np.nancumsum(bc_ret[start:]),
+         label='Buy & hold, sharpe=%.2f'%sharpe_ratio(bc_ret[start:]))
 plt.xlabel('Date')
 plt.ylabel('Cumulative RoR')
 plt.title('Trend Following Bitcoin PnL, %.2f %% Daily Vol'%(vol_target*100))
@@ -288,7 +338,7 @@ sp_weight = 0.5
 bc_weight = 0.5
 
 sp_settle = df['Close_sp'].values
-sp_signal = trend_signal(sp_settle, 20, 100)
+sp_signal = trend_signal(sp_settle, 10, 20)
 sp_ret = market_returns(sp_settle)
 sp_pos = calc_pos(sp_signal, sp_ret)
 sp_pnl = calc_traction(sp_pos, sp_ret)
@@ -297,7 +347,7 @@ sp_pos = sp_pos*sp_gearing*sp_weight
 sp_pnl = sp_pnl*sp_gearing*sp_weight
 
 bc_settle = df['Close_bc'].values
-bc_signal = trend_signal(bc_settle, 10, 20)
+bc_signal = trend_signal(bc_settle, 1, 10)
 bc_ret = market_returns(bc_settle)
 bc_pos = calc_pos(bc_signal, bc_ret)
 bc_pnl = calc_traction(bc_pos, bc_ret)
@@ -309,12 +359,16 @@ pos = np.stack([sp_pos, bc_pos], axis=1)
 mktret = np.stack([sp_ret, bc_ret], axis=1)
 pnl = np.sum(calc_traction(pos, mktret), axis=1)
 gearing = calc_gearing(pnl, vol_target, 100)
+pos = pos*gearing
 pnl = pnl*gearing
 
 plt.figure(figsize=(10,4))
-plt.plot(df.index[start:], np.nancumsum(pnl[start:]), label='Portfolio')
-plt.plot(df.index[start:], np.nancumsum(sp_pnl[start:]), label='S&P')
-plt.plot(df.index[start:], np.nancumsum(bc_pnl[start:]), label='Bitcoin')
+plt.plot(df.index[start:], np.nancumsum(pnl[start:]),
+         label='Portfolio, sharpe=%.2f'%sharpe_ratio(pnl[start:]))
+plt.plot(df.index[start:], np.nancumsum(sp_pnl[start:]),
+         label='S&P, sharpe=%.2f'%sharpe_ratio(sp_pnl[start:]))
+plt.plot(df.index[start:], np.nancumsum(bc_pnl[start:]),
+         label='Bitcoin, sharpe=%.2f'%sharpe_ratio(bc_pnl[start:]))
 plt.xlabel('Date')
 plt.ylabel('Cumulative RoR')
 plt.title('Trend Following Portfolio, %.1f %% Daily Vol'%(vol_target*100))
