@@ -359,7 +359,7 @@ pos = np.stack([sp_pos, bc_pos], axis=1)
 mktret = np.stack([sp_ret, bc_ret], axis=1)
 pnl = np.sum(calc_traction(pos, mktret), axis=1)
 gearing = calc_gearing(pnl, vol_target, 100)
-pos = pos*gearing
+pos = pos*gearing.reshape(-1,1)
 pnl = pnl*gearing
 
 plt.figure(figsize=(10,4))
